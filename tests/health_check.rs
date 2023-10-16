@@ -1,5 +1,4 @@
 use once_cell::sync::Lazy;
-use secrecy::ExposeSecret;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::net::TcpListener;
 use uuid::Uuid;
@@ -27,9 +26,6 @@ pub struct TestApp {
 async fn spawn_app() -> TestApp {
   Lazy::force(&TRACING);
 
-  let subscriber = get_subscriber("zero2prod".into(), "info".into(), std::io::stdout);
-  init_subscriber(subscriber);
-
   let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind random port");
   let port = listener.local_addr().unwrap().port();
   let address = format!("http://127.0.0.1:{}", port);
@@ -47,17 +43,15 @@ async fn spawn_app() -> TestApp {
 }
 
 pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
-  let mut connection =
-    PgConnection::connect(&config.connection_string_without_db().expose_secret())
-      .await
-      .expect("Failed to connect to Postgres");
+  let mut connection = PgConnection::connect_with(&config.without_db())
+    .await
+    .expect("Failed to connect to Postgres");
   connection
     .execute(&*format!(r#"CREATE DATABASE "{}";"#, config.database_name))
     .await
     .expect("Failed to create database.");
 
-  // Migrate database
-  let connection_pool = PgPool::connect(&config.connection_string().expose_secret())
+  let connection_pool = PgPool::connect_with(config.with_db())
     .await
     .expect("Failed to connect to Postgres.");
   sqlx::migrate!("./migrations")
